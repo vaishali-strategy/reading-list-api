@@ -1,3 +1,4 @@
+import os
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -16,7 +17,11 @@ class Book(SQLModel, table=True):
 	title: str
 	author:str
 	status: str = "to-read"
-engine = create_engine("sqlite:///books.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///books.db")
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+
 SQLModel.metadata.create_all(engine)
 def get_session():
     with Session(engine) as session:
