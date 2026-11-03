@@ -2,7 +2,7 @@ import os
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, StringConstraints, field_validator
 from sqlalchemy import func
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
@@ -37,27 +37,35 @@ class BookUpdate(BaseModel):
     title: NonEmpty | None = None
     author: NonEmpty | None = None
     status: Status | None = None
+    @field_validator("title", "author", "status", mode="before")
+    @classmethod
+    def no_explicit_null(cls, v):
+        if v is None:
+            raise ValueError("cannot be null; omit the field to leave it unchanged")
+        return v
 
 @app.get("/")
 def home():
 	return {"message": "Reading List API is running now"}
 
+def find_duplicate(session, title, author, exclude_id=None):
+    query = select(Book).where(
+        func.lower(Book.title) == title.lower(),
+        func.lower(Book.author) == author.lower(),
+    )
+    if exclude_id is not None:
+        query = query.where(Book.id != exclude_id)
+    return session.exec(query).first()
+
 @app.post("/books")
 def add_book(data: BookCreate, session: SessionDep):
-    duplicate = session.exec(
-        select(Book).where(
-            func.lower(Book.title) == data.title.lower(),
-            func.lower(Book.author) == data.author.lower(),
-        )
-    ).first()
-    if duplicate:
+    if find_duplicate(session, data.title, data.author):
         raise HTTPException(status_code=409, detail="Book already exists")
     book = Book(**data.model_dump())
     session.add(book)
     session.commit()
     session.refresh(book)
     return book
-
 
 @app.get("/books")
 def list_books(session: SessionDep, status: Status | None = None):
@@ -73,7 +81,6 @@ def get_book(book_id: int, session: SessionDep):
         raise HTTPException(status_code=404, detail="Book not found")
     return book
 
-
 @app.patch("/books/{book_id}")
 def update_book(book_id: int, update: BookUpdate, session: SessionDep):
     book = session.get(Book, book_id)
@@ -81,6 +88,9 @@ def update_book(book_id: int, update: BookUpdate, session: SessionDep):
         raise HTTPException(status_code=404, detail="Book not found")
     for field, value in update.model_dump(exclude_unset=True).items():
         setattr(book, field, value)
+    if find_duplicate(session, book.title, book.author, exclude_id=book.id):
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Book already exists")
     session.add(book)
     session.commit()
     session.refresh(book)
