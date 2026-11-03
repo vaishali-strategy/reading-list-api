@@ -30,7 +30,7 @@ def make_book(client, title="Atomic Habits", author="James Clear", **extra):
 
 def test_add_book(client):
     response = make_book(client)
-    assert response.status_code == 200
+    assert response.status_code == 201
     data = response.json()
     assert data["id"] == 1
     assert data["title"] == "Atomic Habits"

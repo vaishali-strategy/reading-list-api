@@ -57,7 +57,7 @@ def find_duplicate(session, title, author, exclude_id=None):
         query = query.where(Book.id != exclude_id)
     return session.exec(query).first()
 
-@app.post("/books")
+@app.post("/books", status_code=201)
 def add_book(data: BookCreate, session: SessionDep):
     if find_duplicate(session, data.title, data.author):
         raise HTTPException(status_code=409, detail="Book already exists")
